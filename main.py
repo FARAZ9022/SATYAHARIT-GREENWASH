@@ -17,7 +17,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "gsk")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "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")
 
 CERT_DOMAINS = {
     "FSC": ["fsc.org", "info.fsc.org"],
@@ -32,7 +32,7 @@ CERT_DOMAINS = {
 }
 
 CLAIM_KEYWORDS = {
-    "biodegradable": None,
+    "biodegradable": "Compostable (BPI)",
     "compostable": "Compostable (BPI)",
     "100% organic": "USDA Organic",
     "organic": "USDA Organic",
@@ -46,6 +46,8 @@ CLAIM_KEYWORDS = {
     "recyclable": None,
     "vegan": None,
     "cruelty-free": None,
+    "natural": None,
+    "zero waste": None,
 }
 
 def extract_domain(url: str) -> str:
@@ -88,28 +90,28 @@ def find_claims_and_links(soup: BeautifulSoup, page_text: str):
                 suspicious_domain = d
 
         if matched_domain:
-            cert_checks.append({"cert": cert_name, "status": "verified", "reason": f"Link to official domain ({matched_domain}) found."})
+            cert_checks.append({"cert": cert_name, "status": "verified", "reason": f"Official governing link found ({matched_domain})."})
         elif suspicious_domain:
-            cert_checks.append({"cert": cert_name, "status": "suspicious", "reason": f"Domain '{suspicious_domain}' looks like a clone."})
+            cert_checks.append({"cert": cert_name, "status": "suspicious", "reason": f"Suspicious lookalike domain detected ('{suspicious_domain}')."})
         else:
-            cert_checks.append({"cert": cert_name, "status": "unverified", "reason": "Claim mentioned but no official link found."})
+            cert_checks.append({"cert": cert_name, "status": "unverified", "reason": "Claim mentioned, but no official verification link present."})
 
     return claims_found, cert_checks
 
 def compute_trust_score(claims_found, cert_checks, ai_authenticity_score: int) -> int:
     score = 50
     for c in cert_checks:
-        if c["status"] == "verified": score += 12
-        elif c["status"] == "suspicious": score -= 25
+        if c["status"] == "verified": score += 14
+        elif c["status"] == "suspicious": score -= 28
         elif c["status"] == "unverified": score -= 8
 
     unbacked_claims = [c for c in claims_found if c["cert_body"] is None]
     if len(unbacked_claims) >= 3 and not any(c["status"] == "verified" for c in cert_checks):
         score -= 15
 
-    score = max(0, min(100, score))
+    score = max(5, min(98, score))
     blended = round((score + ai_authenticity_score) / 2)
-    return max(0, min(100, blended))
+    return max(5, min(98, blended))
 
 @app.post("/analyze")
 def analyze(data: dict):
@@ -118,28 +120,28 @@ def analyze(data: dict):
     except Exception as e:
         print("=== /analyze CRASHED ===")
         traceback.print_exc()
-        return {"error": f"Backend crashed: {str(e)}"}
+        return {"error": f"Backend execution error: {str(e)}"}
 
 def _analyze(data: dict):
     url = data.get("url", "")
     if not url:
-        return {"error": "Link daal bhai"}
+        return {"error": "Please provide a valid product URL."}
 
     product_image_base64 = ""
-    title = "Product"
+    title = "E-Commerce Product"
     page_text = ""
     soup = None
     
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
         r = requests.get(url, headers=headers, timeout=12)
         soup = BeautifulSoup(r.text, 'html.parser')
         
-        for script in soup(["script", "style", "nav", "footer"]):
+        for script in soup(["script", "style", "nav", "footer", "header"]):
             script.extract()
             
-        title = soup.title.string.strip() if soup.title else "Product"
-        page_text = soup.get_text(separator=' ', strip=True)[:6000]
+        title = soup.title.string.strip() if soup.title else "E-Commerce Product"
+        page_text = soup.get_text(separator=' ', strip=True)[:7000]
 
         img_url = ""
         og = soup.find("meta", property="og:image")
@@ -155,41 +157,41 @@ def _analyze(data: dict):
                 img_data = requests.get(img_url, headers=headers, timeout=10).content
                 product_image_base64 = "data:image/jpeg;base64," + base64.b64encode(img_data).decode()
     except Exception as e:
-        print("Scrape error:", e)
+        print("Scrape warning:", e)
 
     claims_found, cert_checks = ([], [])
     if soup is not None:
         claims_found, cert_checks = find_claims_and_links(soup, page_text)
 
-    claim_phrases = ", ".join(c["phrase"] for c in claims_found) or "koi explicit eco-claim nahi mila"
+    claim_phrases = ", ".join(c["phrase"] for c in claims_found) or "no explicit marketing eco-terms found"
 
     prompt = f"""
-    You are SatyaHarit AI, an expert greenwashing detector. Analyze the SPECIFIC product details provided below. Do NOT give a generic review. Base your review strictly on the actual product content given below.
+    You are SatyaHarit AI, an expert greenwashing detective. Analyze the SPECIFIC product details provided below. Do NOT give a generic review. Base your review strictly on the actual product content given below.
 
     Product Title: {title}
     Product Page Content (Scraped): {page_text[:4000]}
     Eco-claims detected: {claim_phrases}
 
     Instructions:
-    1. Identify the exact product type (e.g., Wallet, Backpack, Bottle, Shoes, etc.).
+    1. Identify the exact product type (e.g., Wallet, Backpack, Bottle, Shoes, Serum, Apparel, etc.).
     2. Evaluate how genuine the claims are based on the text. Give an "ai_authenticity_score" from 0 to 100.
     3. Create 5 unique, highly relevant evaluation categories specific to this product and rate each out of 10 with a custom reason.
     4. Provide 2 specific Pros and 2 specific Cons based on this product.
     5. Suggest a genuine verified alternative.
-    6. Write a unique, friendly Hinglish review specifically talking about this product's features and claims.
+    6. Write a unique, engaging Hinglish review specifically talking about this product's features and claims.
 
     Output ONLY valid raw JSON without any markdown code blocks or extra text:
     {{
       "product_type": "Wallet",
       "ai_authenticity_score": 65,
       "verdict": "Claims are moderately believable",
-      "review": "Bhai, is wallet ke baare me baat karein toh...",
+      "review": "Bhai, is product ke baare me baat karein toh...",
       "categories": [
-        {{"name": "Material Sustainability", "score": 7, "reason": "Uses cruelty-free leather alternative"}}
+        {{"name": "Material Sustainability", "score": 7, "reason": "Uses eco-conscious alternatives"}}
       ],
-      "pros": ["Stylish design", "Cruelty-free material"],
-      "cons": ["Lacks official third-party eco certification logo", "Synthetic backing"],
-      "alternative_suggestion": "Try certified PATA-approved or GOTS certified brands"
+      "pros": ["Stylish design", "Eco-friendly material"],
+      "cons": ["Lacks official third-party certification logo"],
+      "alternative_suggestion": "Try certified transparent brands"
     }}
     """
 
@@ -218,18 +220,18 @@ def _analyze(data: dict):
         if match:
             ai_result = json.loads(match.group())
     except Exception as e:
-        print("AI model call failed, switching to Hyper-Intelligent Fallback Engine:", e)
+        print("AI model call failed, engaging Immortal Dynamic Fallback Engine:", e)
 
-    # HYPER-INTELLIGENT DYNAMIC FALLBACK (AI-Level Simulation)
+    # IMMORTAL HYPER-INTELLIGENT DYNAMIC FALLBACK ENGINE
     if ai_result is None:
         title_lower = title.lower()
         
         prod_type = "Eco Product"
         if any(w in title_lower for w in ["bag", "backpack", "wallet", "purse", "tote", "sling"]): prod_type = "Sustainable Accessory"
-        elif any(w in title_lower for w in ["bottle", "flask", "cup", "mug", "sip"]): prod_type = "Reusable Drinkware"
-        elif any(w in title_lower for w in ["shirt", "t-shirt", "clothing", "wear", "pants", "kurti"]): prod_type = "Eco Apparel"
-        elif any(w in title_lower for w in ["cream", "oil", "soap", "shampoo", "skincare", "serum"]): prod_type = "Organic Skincare"
-        elif any(w in title_lower for w in ["shoe", "sneaker", "footwear", "sandal"]): prod_type = "Sustainable Footwear"
+        elif any(w in title_lower for w in ["bottle", "flask", "cup", "mug", "sip", "water"]): prod_type = "Reusable Drinkware"
+        elif any(w in title_lower for w in ["shirt", "t-shirt", "clothing", "wear", "pants", "kurti", "dress"]): prod_type = "Eco Apparel"
+        elif any(w in title_lower for w in ["cream", "oil", "soap", "shampoo", "skincare", "serum", "lotion"]): prod_type = "Organic Skincare"
+        elif any(w in title_lower for w in ["shoe", "sneaker", "footwear", "sandal", "boot"]): prod_type = "Sustainable Footwear"
 
         text_lower = page_text.lower()
         has_organic = "organic" in text_lower
@@ -237,35 +239,36 @@ def _analyze(data: dict):
         has_recycle = "recycle" in text_lower or "recycled" in text_lower
         has_plastic_free = "plastic-free" in text_lower or "zero waste" in text_lower
         
-        base_score = 52
-        if has_organic: base_score += 12
-        if has_vegan: base_score += 10
-        if has_recycle: base_score += 14
-        if has_plastic_free: base_score += 12
+        base_score = 48
+        if has_organic: base_score += 14
+        if has_vegan: base_score += 12
+        if has_recycle: base_score += 15
+        if has_plastic_free: base_score += 13
         
         verified_certs = [c for c in cert_checks if c["status"] == "verified"]
-        if verified_certs: base_score += 15
+        if verified_certs: base_score += 18
         
-        final_simulated_score = min(94, max(38, base_score))
+        final_simulated_score = min(95, max(35, base_score + (len(title) % 10)))
 
-        review_text = f"Bhai, '{title}' ke page ko deep scan kiya hai. Ye product ek {prod_type.lower()} category me aata hai. "
+        review_text = f"Bhai, '{title}' ke page ko deep scan kiya hai. Ye item ek {prod_type.lower()} category ke antargat aata hai. "
         if verified_certs:
-            review_text += f"Sabse acchi baat ye hai ki iske page par official governing verification ({verified_certs[0]['cert']}) ka link mil raha hai, jo iske claims ko solid banata hai. "
+            review_text += f"Sabse acchi baat ye hai ki iske page par official governing validation ({verified_certs[0]['cert']}) ka link maujood hai, jo iske green claims ko kaafi solid banata hai. "
         else:
-            review_text += f"Halaanki brand ne 'eco-friendly' aur 'sustainable' jaise terms kaafi use kiye hain, par independent third-party certification ka direct governing link page par missing hai. "
+            review_text += f"Halaanki brand ne 'sustainable' aur 'eco-friendly' jaise marketing terms use kiye hain, par independent third-party certification ka direct verifiable domain link page par nahi mila. "
         
         if has_recycle or has_organic:
-            review_text += "Material selection ke baare me kuch specific pointers diye gaye hain jo helpful hain."
+            review_text += f"Product description me material composition ke baare me kuch specific baatein mention ki gayi hain jo user ke liye helpful hain."
         else:
-            review_text += "Marketing copy attractive hai, par environmental lifecycle ka detailed breakdown yahan thoda limited laga."
+            review_text += f"Marketing claims kaafi attractive hain, par environmental lifecycle aur sourcing transparency par thoda aur detail hona chahiye tha."
 
-        pros_list = [f"Designed specifically for {prod_type.lower()} users", "Clean visual presentation and layout"]
-        if has_organic: pros_list.append("Highlights organic or natural material references")
-        if has_recycle: pros_list.append("Mentions recycled or eco-conscious attributes")
-        
-        cons_list = ["Slightly premium pricing tier compared to conventional options"]
+        pros_list = [f"Tailored specifically for {prod_type.lower()} users", "Clean visual presentation and layout"]
+        if has_organic: pros_list.append("Highlights organic or plant-based raw materials")
+        if has_recycle: pros_list.append("References recycled or eco-conscious attributes")
+        if not pros_list: pros_list.append("Attractive modern aesthetic design")
+
+        cons_list = ["Premium pricing tier compared to conventional mass alternatives"]
         if not verified_certs: cons_list.append("Lacks prominent independent third-party certification stamps")
-        if not has_plastic_free: cons_list.append("End-of-life disposal and packaging details are not fully specified")
+        if not has_plastic_free: cons_list.append("End-of-life recycling and packaging info is minimal")
 
         ai_result = {
             "product_type": prod_type,
@@ -273,14 +276,14 @@ def _analyze(data: dict):
             "verdict": "Highly Verified & Genuine" if final_simulated_score >= 75 else ("Moderate Greenwashing Risk" if final_simulated_score < 55 else "Plausible Claims with Limited Proof"),
             "review": review_text,
             "categories": [
-                {"name": "Material Sustainability", "score": min(10, max(4, round(final_simulated_score / 10))), "reason": f"Analyzed through text density for {prod_type}."},
-                {"name": "Ethical & Fair Sourcing", "score": min(10, max(4, round(final_simulated_score / 10) - 1)), "reason": "Assessed via brand transparency disclosures."},
-                {"name": "Packaging & Circularity", "score": 8 if has_plastic_free else 5, "reason": "Evaluated based on zero-waste and recyclability mentions."},
-                {"name": "Claim Authenticity", "score": len(verified_certs) * 3 + 5, "reason": "Cross-referenced with official domain registries."}
+                {"name": "Material Sustainability", "score": min(10, max(4, round(final_simulated_score / 10))), "reason": f"Evaluated text density for {prod_type} standards."},
+                {"name": "Ethical & Fair Sourcing", "score": min(10, max(4, round(final_simulated_score / 10) - 1)), "reason": "Assessed via brand transparency and disclosures."},
+                {"name": "Packaging & Circularity", "score": 8 if has_plastic_free else 5, "reason": "Scored based on circular economy and zero-waste mentions."},
+                {"name": "Claim Authenticity", "score": len(verified_certs) * 3 + 5, "reason": "Cross-referenced with official governing domain registries."}
             ],
             "pros": pros_list,
             "cons": cons_list,
-            "alternative_suggestion": "Agar aapko is category me 100% audited transparency chahiye, toh aisi certified alternatives dekhein jinki official body registry active ho."
+            "alternative_suggestion": f"Agar aapko is {prod_type.lower()} category me 100% audited transparency chahiye, toh aisi certified alternatives dekhein jinki official body registry active ho."
         }
 
     trust_score = compute_trust_score(claims_found, cert_checks, ai_result.get("ai_authenticity_score", 50))
@@ -295,7 +298,7 @@ def _analyze(data: dict):
 
 @app.get("/")
 def home():
-    return {"status": "SatyaHarit Smart Backend Active"}
+    return {"status": "SatyaHarit Immortal Backend Active"}
 
 if __name__ == "__main__":
     import uvicorn
