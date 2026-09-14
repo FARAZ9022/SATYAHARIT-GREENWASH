@@ -2,7 +2,7 @@ import os
 import re
 import json
 import traceback
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -27,7 +27,7 @@ app.add_middleware(
 )
 
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-1.5-flash")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 
 PRODUCT_KEYWORDS = {
     "bag": "Sustainable Accessory",
@@ -76,7 +76,6 @@ DEFAULT_IMAGES = {
     "Eco Apparel": "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=500",
     "Organic Skincare": "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=500",
     "Sustainable Footwear": "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=500",
-    "Eco Product": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500",
 }
 
 
@@ -124,10 +123,7 @@ def _extract_claims(text):
         if phrase in text_lower:
             claims.append(phrase)
 
-    for keyword in [
-        "recycled", "bpa free", "bpa", "organic", "eco", "water bottle",
-        "reusable", "certified", "fair trade", "compostable", "vegan"
-    ]:
+    for keyword in ["recycled", "bpa free", "bpa", "organic", "eco", "water bottle", "reusable", "certified", "fair trade", "compostable", "vegan"]:
         if keyword in text_lower and keyword not in claims:
             claims.append(keyword)
 
@@ -136,84 +132,6 @@ def _extract_claims(text):
         claims = list(dict.fromkeys(title_words[:5]))
 
     return claims[:10]
-
-
-def _extract_image_url(soup):
-    candidates = []
-
-    def add_candidate(value):
-        if isinstance(value, list):
-            for item in value:
-                add_candidate(item)
-            return
-        if isinstance(value, dict):
-            for key in ("url", "contentUrl", "image", "image_url", "product_image"):
-                if key in value:
-                    add_candidate(value[key])
-            return
-        if not isinstance(value, str):
-            return
-        value = value.strip()
-        if value.startswith("data:image"):
-            return
-        if value.startswith("//"):
-            value = "https:" + value
-        if value.startswith("/"):
-            value = "https://" + urlparse(soup.base.get("href", "") if soup.base else "").netloc + value
-        if value.startswith("http") and value not in candidates:
-            candidates.append(value)
-
-    for script in soup.select("script[type='application/ld+json']"):
-        try:
-            add_candidate(json.loads(script.string or script.get_text()))
-        except (TypeError, json.JSONDecodeError):
-            continue
-
-    for script in soup.select("script"):
-        script_text = script.string or script.get_text()
-        for match in re.findall(r'https?[^"\\ ]+?(?:jpg|jpeg|png|webp)(?:\\?[^"\\ ]*)?', script_text, re.IGNORECASE):
-            add_candidate(match.replace("\\/", "/"))
-
-    selectors = [
-        "meta[property='og:image']",
-        "meta[name='twitter:image']",
-        "meta[name='image']",
-        "meta[property='twitter:image']",
-        "img[src]",
-        "img[data-src]",
-        "img[data-lazy-src]",
-        "source[srcset]"
-    ]
-
-    for selector in selectors:
-        for tag in soup.select(selector):
-            value = tag.get("content") or tag.get("src") or tag.get("data-src") or tag.get("data-lazy-src") or tag.get("srcset")
-            if not value:
-                continue
-            if value.startswith("data:image"):
-                continue
-            if value.startswith("//"):
-                value = "https:" + value
-            add_candidate(value)
-
-    if not candidates:
-        return ""
-
-    for candidate in candidates:
-        if "jpg" in candidate.lower() or "jpeg" in candidate.lower() or "png" in candidate.lower() or "webp" in candidate.lower():
-            return candidate
-    return candidates[0]
-
-
-def _make_quick_review(title, product_type, claims, text):
-    clean_text = (text or "").lower()
-    if not claims and not clean_text:
-        return f"{title} ko quick product check ke liye review bana rahe hain; abhi product page par detailed sustainability proof clear nahi dikh rahi."
-
-    if any(word in clean_text for word in ["organic", "recycled", "certified", "fair trade", "bpa free"]):
-        return f"{title} me kuch eco-signals mil rahe hain, lekin authenticity verify karne ke liye product page par clear sourcing aur certification proof chahiye."
-
-    return f"{title} ko product preview ke hisaab se dekha gaya; page par eco-claim milte hain, lekin real proof aur transparent material info missing hai."
 
 
 def extract_product_signals(html_text, url):
@@ -248,14 +166,40 @@ def extract_product_signals(html_text, url):
             if piece and len(piece) > 20:
                 claims.append(piece[:80])
 
-    og_image = _extract_image_url(soup)
+    image_candidates = []
+    for selector in ["meta[property='og:image']", "meta[name='twitter:image']", "img"]:
+        tag = soup.select_one(selector)
+        if tag:
+            value = tag.get("content") or tag.get("src")
+            if value:
+                image_candidates.append(value)
+
+    for script in soup.select("script[type='application/ld+json']"):
+        try:
+            structured_data = json.loads(script.string or script.get_text())
+            structured_items = structured_data if isinstance(structured_data, list) else [structured_data]
+            for item in structured_items:
+                if isinstance(item, dict):
+                    image_value = item.get("image")
+                    if isinstance(image_value, str):
+                        image_candidates.append(image_value)
+                    elif isinstance(image_value, list):
+                        image_candidates.extend(image_value)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+
+    product_image = ""
+    for candidate in image_candidates:
+        if isinstance(candidate, str) and candidate.strip():
+            product_image = urljoin(url, candidate.strip())
+            break
 
     return {
         "title": _normalize_space(title) or _get_title_from_url(url),
         "description": _normalize_space(meta_desc),
         "text": short_text,
         "claims": claims,
-        "image": og_image,
+        "image": product_image,
     }
 
 
@@ -275,15 +219,17 @@ def _safe_json_loads(raw_value):
 
 
 def _generate_fallback_report(product_type, title, text, url):
-    claim_list = _extract_claims(f"{title} {text}")
-    score = 62
-    if len(claim_list) >= 4:
-        score = 70
-    if "recycled" in text.lower() or "organic" in text.lower():
-        score += 5
-    if "bpa free" in text.lower() or "certified" in text.lower() or "fair trade" in text.lower():
-        score += 4
-    score = max(35, min(92, score))
+    evidence = f"{title} {text}".lower()
+    claim_list = _extract_claims(evidence)
+    has_material_proof = any(word in evidence for word in ["recycled", "organic", "stainless steel", "cotton", "hemp", "bamboo"])
+    has_certification = any(word in evidence for word in ["certified", "gots", "fsc", "fair trade", "oekotex", "cruelty free"])
+    has_supply_chain = any(word in evidence for word in ["supply chain", "factory", "fair wage", "artisan", "traceable", "sourcing"])
+    has_lifecycle = any(word in evidence for word in ["recyclable", "compostable", "take back", "repair", "refill", "end of life"])
+    material_score = 8 if has_material_proof and has_certification else 6 if has_material_proof else 3
+    sourcing_score = 8 if has_supply_chain and has_certification else 5 if has_supply_chain else 3
+    packaging_score = 8 if has_lifecycle and has_certification else 5 if has_lifecycle else 3
+    claim_score = 8 if has_certification else min(7, 2 + len(claim_list)) if claim_list else 2
+    score = max(35, min(92, round((material_score + sourcing_score + packaging_score + claim_score) * 2.5)))
 
     if score >= 78:
         verdict = "Low Greenwashing Risk"
@@ -292,27 +238,33 @@ def _generate_fallback_report(product_type, title, text, url):
     else:
         verdict = "High Greenwashing Risk"
 
-    review = _make_quick_review(title, product_type, claim_list, text)
+    review = (
+        f"Bhai, {title} ({product_type}) ke available page evidence me ye claims/keywords mile: {', '.join(claim_list[:5]) or 'koi clear eco-claim nahi'}. "
+        f"Material proof {'mila' if has_material_proof else 'nahi mila'}, certification {'mili' if has_certification else 'nahi mili'}, "
+        f"sourcing detail {'mili' if has_supply_chain else 'nahi mili'}, aur lifecycle information {'mili' if has_lifecycle else 'nahi mili'}. "
+        f"Is evidence ke basis par score {score}/100 hai. Marketing claims aur independently verifiable proof ke beech gap dikh raha hai, "
+        f"isliye brand se material documents, certification number, aur supply-chain details maangni chahiye."
+    )
 
     categories = [
-        {"name": "Material Sustainability", "score": 7 if "recycled" in text.lower() or "organic" in text.lower() else 5, "reason": "Page text me material claims dikhi, lekin proof kaafi consistent nahi hai."},
-        {"name": "Ethical & Fair Sourcing", "score": 6, "reason": "Sourcing and labor detail page par clear nahi dikh rahi."},
-        {"name": "Packaging & Circularity", "score": 6, "reason": "Packaging reuse aur circularity ka mention inconsistent hai."},
-        {"name": "Claim Authenticity", "score": 5, "reason": "Eco claims mil rahe hain, par verification details missing hain."},
+        {"name": "Material Sustainability", "score": material_score, "reason": "Material evidence ko page content ke basis par assess kiya gaya."},
+        {"name": "Ethical & Fair Sourcing", "score": sourcing_score, "reason": "Supply-chain aur labor transparency ke available evidence ke basis par score diya gaya."},
+        {"name": "Packaging & Circularity", "score": packaging_score, "reason": "Lifecycle, reuse, repair, refill ya packaging evidence ke basis par score diya gaya."},
+        {"name": "Claim Authenticity", "score": claim_score, "reason": "Claims ko certification ya independent proof ke against assess kiya gaya."},
     ]
 
     pros = []
     cons = []
-    if "recycled" in text.lower() or "organic" in text.lower():
+    if has_material_proof:
         pros.append("Page me eco-conscious material language dikh rahi hai.")
     else:
         pros.append("Product category ko sustainable positioning ke liye attempt kiya gaya hai.")
-    if "certified" in text.lower() or "fair trade" in text.lower():
+    if has_certification:
         pros.append("Claim support ke liye certification mention mil raha hai.")
     else:
         pros.append("Product ko greener positioning ke hisaab se present kiya gaya hai.")
 
-    if "plastic free" in text.lower() or "bpa free" in text.lower():
+    if has_lifecycle:
         cons.append("Specific performance claims ka proof page par weak lag raha hai.")
     else:
         cons.append("Brand ke eco-claims ki authenticity ko verify karne ke liye zyada evidence chahiye, aur website par proof missing hai.")
@@ -333,12 +285,35 @@ def _generate_fallback_report(product_type, title, text, url):
         "pros": pros[:2],
         "cons": cons[:2],
         "alternative_suggestion": alternative,
-        "claims_detected": [{"phrase": claim} for claim in claim_list[:10]],
+        "claims_detected": [
+            {"phrase": claim} for claim in claim_list[:10]
+        ],
         "cert_checks": [],
     }
 
 
-def _call_gemini_report(product_type, title, url, content_text):
+def _normalize_report_score(report):
+    category_scores = []
+    for category in report.get("categories") or []:
+        try:
+            score = float(category.get("score"))
+            if 0 <= score <= 10:
+                category_scores.append(score)
+        except (AttributeError, TypeError, ValueError):
+            continue
+
+    if category_scores:
+        report["green_trust_score"] = round(sum(category_scores) / len(category_scores) * 10)
+    else:
+        try:
+            report["green_trust_score"] = max(35, min(92, int(report.get("green_trust_score", 62))))
+        except (TypeError, ValueError):
+            report["green_trust_score"] = 62
+    report["ai_authenticity_score"] = report["green_trust_score"]
+    return report
+
+
+def _call_gemini_report(product_type, title, url, content_text, image_url=""):
     if genai is None or not GOOGLE_API_KEY:
         return None
 
@@ -355,10 +330,12 @@ Product Category: {product_type}
 Actual page text extracted from the URL:
 {content_text[:7000]}
 
-Give a realistic greenwashing assessment in Hinglish and return ONLY valid JSON. Use this exact structure:
+If a product image is attached, inspect its visible product type, material cues, packaging, labels, and claims. Do not invent details that are not visible in the page or image.
+
+Give a realistic greenwashing assessment in Hinglish and return ONLY valid JSON. Calculate every category score from the supplied product evidence; never copy a sample score. Use this exact structure:
 {{
   "product_type": "...",
-  "green_trust_score": 68,
+    "green_trust_score": 0,
   "verdict": "Moderate Greenwashing Risk",
   "review": "Detailed Hinglish review here",
   "categories": [
@@ -372,11 +349,26 @@ Give a realistic greenwashing assessment in Hinglish and return ONLY valid JSON.
   "alternative_suggestion": "..."
 }}
         """
-        response = model.generate_content(prompt)
+        content_parts = [prompt]
+        if image_url:
+            image_response = requests.get(
+                image_url,
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=10,
+            )
+            image_response.raise_for_status()
+            content_type = image_response.headers.get("Content-Type", "image/jpeg").split(";", 1)[0]
+            if content_type.startswith("image/"):
+                content_parts.append({
+                    "mime_type": content_type,
+                    "data": image_response.content,
+                })
+
+        response = model.generate_content(content_parts)
         raw_text = getattr(response, "text", "") or ""
         parsed = _safe_json_loads(raw_text)
         if parsed:
-            return parsed
+            return _normalize_report_score(parsed)
     except Exception as e:
         print(f"Gemini analysis failed: {e}")
     return None
@@ -406,9 +398,16 @@ def _analyze(data: dict):
     signals = extract_product_signals(html_text, url)
     title = signals["title"] or _get_title_from_url(url)
     product_type = _detect_product_type(url, f"{title} {signals['description']} {signals['text']}")
-    product_image = signals["image"] or DEFAULT_IMAGES.get(product_type, DEFAULT_IMAGES["Eco Product"])
+    product_image = signals["image"] or DEFAULT_IMAGES.get(product_type, DEFAULT_IMAGES["Eco Product"] if "Eco Product" in DEFAULT_IMAGES else "")
 
-    report = _call_gemini_report(product_type, title, url, signals["text"])
+    report = _call_gemini_report(
+        product_type,
+        title,
+        url,
+        signals["text"],
+        signals["image"],
+    )
+    analysis_source = "gemini" if report else "fallback"
     if not report:
         report = _generate_fallback_report(product_type, title, signals["text"], url)
 
@@ -443,6 +442,7 @@ def _analyze(data: dict):
         "pros": report.get("pros", []),
         "cons": report.get("cons", []),
         "alternative_suggestion": report.get("alternative_suggestion", "Choose a more transparent option with clear certifications."),
+        "analysis_source": analysis_source,
     }
 
 
