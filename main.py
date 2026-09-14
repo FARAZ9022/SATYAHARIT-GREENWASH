@@ -17,7 +17,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "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")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "gsk_0")
 
 @app.post("/analyze")
 def analyze(data: dict):
@@ -33,8 +33,9 @@ def _analyze(data: dict):
     if not url:
         return {"error": "Please provide a valid product URL."}
 
-    # 1. Product Type & Title & Image Fallback from URL slug first
     url_lower = url.lower()
+    
+    # 1. Smart Product Type & Image Selection based on URL keywords
     prod_type = "Eco Product"
     if any(w in url_lower for w in ["bag", "backpack", "wallet", "purse", "tote", "sling"]): 
         prod_type = "Sustainable Accessory"
@@ -54,52 +55,64 @@ def _analyze(data: dict):
     else:
         default_img = "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500"
 
-    title = "E-Commerce Product"
+    # 2. Extract Clean Title from URL Slug (Safeguarded against Access Denied)
+    title = ""
     try:
-        path_parts = [p for p in urlparse(url).path.strip("/").split("/") if p and p not in ["p", "dp", "products"]]
-        if path_parts:
-            slug = path_parts[-1]
-            extracted_name = slug.replace("-", " ").replace("_", " ").title()
-            if len(extracted_name) > 3:
-                title = extracted_name
+        path_segments = [p for p in urlparse(url).path.strip("/").split("/") if p]
+        # Meesho format: /stylish-backpacks-for-girl/p/5aidwr -> slug is before 'p'
+        if "p" in path_segments:
+            p_idx = path_segments.index("p")
+            if p_idx > 0:
+                slug = path_segments[p_idx - 1]
+                title = slug.replace("-", " ").replace("_", " ").title()
+        elif "dp" in path_segments:
+            dp_idx = path_segments.index("dp")
+            if dp_idx > 0:
+                slug = path_segments[dp_idx - 1]
+                title = slug.replace("-", " ").replace("_", " ").title()
+        elif path_segments:
+            slug = path_segments[0] if len(path_segments[0]) > 3 else path_segments[-1]
+            title = slug.replace("-", " ").replace("_", " ").title()
     except:
         pass
+
+    if not title or len(title) <= 3 or "Access" in title or "Maintenance" in title:
+        title = "Stylish Product Item"
 
     product_image_base64 = default_img
     page_text = ""
     soup = None
 
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-        r = requests.get(url, headers=headers, timeout=8)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9"
+        }
+        r = requests.get(url, headers=headers, timeout=6)
         if r.status_code == 200:
             soup = BeautifulSoup(r.text, 'html.parser')
-            if soup.title and soup.title.string:
-                title = soup.title.string.strip()
             page_text = soup.get_text(separator=' ', strip=True)[:5000]
-            
-            # Try to grab real image if not blocked
             og = soup.find("meta", property="og:image")
             if og and og.get("content"):
                 product_image_base64 = og.get("content")
     except Exception as e:
-        print("Scrape bypass notice:", e)
+        print("Scrape notice:", e)
 
-    # 2. Unique Hashing based on URL so scores & reviews are NEVER the same
+    # 3. Unique Hashing based on URL for distinct scores & reviews
     url_seed = sum(ord(c) for c in url)
-    unique_offset = (url_seed % 45) # 0 to 44 variation
+    unique_offset = (url_seed % 40)
     
     text_lower = page_text.lower() + url_lower
     has_organic = "organic" in text_lower
     has_vegan = "vegan" in text_lower or "cruelty-free" in text_lower
     has_recycle = "recycle" in text_lower or "recycled" in text_lower
     
-    base_score = 38 + unique_offset
-    if has_organic: base_score += 9
-    if has_vegan: base_score += 8
-    if has_recycle: base_score += 11
+    base_score = 42 + unique_offset
+    if has_organic: base_score += 8
+    if has_vegan: base_score += 7
+    if has_recycle: base_score += 10
     
-    final_simulated_score = min(96, max(32, base_score))
+    final_simulated_score = min(95, max(35, base_score))
 
     review_text = f"Bhai, '{title}' ke is product link ko analyze kiya hai. Ye item ek {prod_type.lower()} category ke antargat aata hai. "
     if final_simulated_score > 70:
@@ -109,7 +122,7 @@ def _analyze(data: dict):
     else:
         review_text += f"Yahan greenwashing ka kafi risk hai kyunki specific certifications missing hain. "
 
-    pros_list = [f"Tailored design for {prod_type.lower()} usage", f"Dynamic audit signature matched"]
+    pros_list = [f"Tailored design for {prod_type.lower()} usage", f"Dynamic URL signature matched"]
     if has_organic: pros_list.append("Highlights plant-based or organic raw materials")
     if has_recycle: pros_list.append("References circular economy principles")
     if len(pros_list) < 3: pros_list.append("Clean visual presentation")
