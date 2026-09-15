@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SatyaHarit — GreenWash Guard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F0F7EE;
+    --card:#FFFFFF;
+    --ink:#132213;
+    --ink-soft:#4A5D48;
+    --border:#D4E5D0;
+    --green:#1B6B43;
+    --green-dark:#11442B;
+    --green-light:#E2F1E5;
+    --accent:#22C55E;
+    --warn:#D97706;
+    --warn-bg:#FEF3C7;
+    --danger:#DC2626;
+    --danger-bg:#FEE2E2;
+    --shadow: 0 10px 30px rgba(27,107,67,0.08);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Inter', sans-serif;
+    line-height:1.6;
+  }
+  h1,h2,h3{font-family:'Plus Jakarta Sans', sans-serif; margin:0;}
+  .container{max-width:900px;margin:0 auto;padding:0 24px;}
+
+  /* ---- Nav ---- */
+  nav{
+    background:rgba(255,255,255,0.9);
+    backdrop-filter: blur(10px);
+    border-bottom:1px solid var(--border);
+    position:sticky;top:0;z-index:100;
+  }
+  .nav-inner{
+    max-width:900px;margin:0 auto;padding:16px 24px;
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  .brand{display:flex;align-items:center;gap:10px;}
+  .brand svg{width:30px;height:30px;}
+  .brand span{font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:20px;color:var(--green-dark);letter-spacing:-0.5px;}
+  .nav-links{display:flex;gap:24px;font-size:14px;font-weight:500;color:var(--ink-soft);}
+  .nav-links a{text-decoration:none;color:inherit;transition:color 0.2s;}
+  .nav-links a:hover{color:var(--green);}
+
+  /* ---- Hero ---- */
+  .hero{
+    background:linear-gradient(135deg, #0F3E26 0%, #1B6B43 100%);
+    color:#fff;
+    padding:70px 0 85px;
+    position:relative;
+    overflow:hidden;
+  }
+  .hero::after{
+    content:'';
+    position:absolute; inset:0;
+    background-image: radial-gradient(circle at 90% 15%, rgba(255,255,255,0.12) 0, transparent 50%),
+                      radial-gradient(circle at 10% 85%, rgba(34,197,94,0.15) 0, transparent 40%);
+    pointer-events:none;
+  }
+  .hero-inner{max-width:900px;margin:0 auto;padding:0 24px;position:relative;z-index:2;}
+  .hero h1{font-size:clamp(30px, 4.5vw, 42px); font-weight:800; max-width:14em; line-height:1.2; letter-spacing:-1px;}
+  .hero p{font-size:16.5px; color:rgba(255,255,255,0.88); max-width:38em; margin-top:16px;}
+
+  .search-card{
+    background:#fff;
+    border-radius:16px;
+    box-shadow:0 20px 40px rgba(11,43,27,0.25);
+    padding:10px;
+    margin-top:32px;
+    display:flex;
+    gap:10px;
+    max-width:600px;
+  }
+  #link{
+    flex:1;
+    border:none;
+    outline:none;
+    padding:14px 16px;
+    font-size:15px;
+    font-family:'Inter',sans-serif;
+    color:var(--ink);
+    border-radius:10px;
+    background:#F9FBF8;
+  }
+  #btn{
+    border:none;
+    background:var(--green);
+    color:#fff;
+    font-family:'Plus Jakarta Sans',sans-serif;
+    font-weight:700;
+    font-size:15px;
+    padding:0 26px;
+    border-radius:10px;
+    cursor:pointer;
+    transition:all 0.2s ease;
+    box-shadow:0 4px 12px rgba(27,107,67,0.3);
+  }
+  #btn:hover{background:var(--green-dark);transform:translateY(-1px);}
+  #btn:disabled{background:#9BAF9B;cursor:default;box-shadow:none;}
+  #errMsg{color:#FFD9D0;font-size:14px;margin-top:12px;display:none;font-weight:500;}
+
+  /* ---- Scan state ---- */
+  #scanPanel{display:none;margin-top:22px;max-width:600px;}
+  #scanPanel.active{display:block;}
+  .scan-track{height:6px;background:rgba(255,255,255,0.2);border-radius:6px;overflow:hidden;position:relative;}
+  .scan-track::after{
+    content:'';position:absolute;top:0;left:-40%;height:100%;width:40%;
+    background:var(--accent);border-radius:6px;
+    animation:sweep 1.2s ease-in-out infinite;
+    box-shadow:0 0 10px var(--accent);
+  }
+  @keyframes sweep{0%{left:-40%;}100%{left:100%;}}
+  #scanStatus{font-size:14px;color:rgba(255,255,255,0.9);margin-top:10px;font-weight:500;}
+
+  /* ---- Main content ---- */
+  main{padding:50px 0 100px;}
+  #result{display:none;}
+  #result.active{display:block;animation:rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;}
+  @keyframes rise{from{opacity:0;transform:translateY(16px);}to{opacity:1;transform:translateY(0);}}
+
+  .card{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:18px;
+    box-shadow:var(--shadow);
+    padding:30px;
+    margin-bottom:24px;
+    transition:transform 0.2s;
+  }
+  .card:hover{border-color:#B8D8B2;}
+
+  /* Product overview */
+  .overview{display:flex;gap:28px;flex-wrap:wrap;align-items:center;}
+  .pimg-box{
+    width:210px;height:210px;flex-shrink:0;
+    background:#F4F8F3;
+    border:1px solid var(--border);
+    border-radius:14px;
+    display:flex;align-items:center;justify-content:center;
+    overflow:hidden;
+  }
+  .pimg-box img{width:100%;height:100%;object-fit:contain;padding:10px;}
+  .ov-meta{flex:1;min-width:260px;}
+  .badge{
+    display:inline-block;
+    background:var(--green-light);
+    color:var(--green-dark);
+    font-size:13px;
+    font-weight:700;
+    padding:5px 12px;
+    border-radius:20px;
+    letter-spacing:0.3px;
+    text-transform:uppercase;
+  }
+  #pTitle{font-size:24px;font-weight:700;margin:10px 0 6px;letter-spacing:-0.5px;color:var(--green-dark);}
+  #pAbout{color:var(--ink-soft);font-size:15px;margin:8px 0 20px;}
+
+  .score-strip{
+    display:flex;align-items:center;gap:20px;
+    background:linear-gradient(135deg, #F8FBF7 0%, #EEF6ED 100%);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:16px 20px;
+  }
+  .score-num{font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;font-size:36px;line-height:1;}
+  .score-label{font-size:12.5px;color:var(--ink-soft);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;}
+  .score-verdict{font-size:15px;font-weight:600;margin-top:4px;}
+
+  /* Section headings */
+  .card h2{font-size:18px;font-weight:700;margin-bottom:18px;color:var(--green-dark);display:flex;flex-direction:column;gap:4px;}
+  .card h2 .sub{font-family:'Inter',sans-serif;font-weight:400;font-size:13.5px;color:var(--ink-soft);}
+
+  /* Cert grid */
+  .cert-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  @media (max-width:650px){.cert-grid{grid-template-columns:1fr;}}
+  .cert-item{
+    border-radius:12px;
+    padding:16px;
+    border:1px solid var(--border);
+  }
+  .cert-item.verified{background:#F0FDF4;border-color:#BBF7D0;}
+  .cert-item.suspicious{background:var(--danger-bg);border-color:#FECACA;}
+  .cert-item.unverified{background:var(--warn-bg);border-color:#FDE68A;}
+  .cert-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+  .cert-name{font-weight:700;font-size:15px;color:var(--ink);}
+  .cert-tag{font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;padding:3px 10px;border-radius:20px;}
+  .cert-item.verified .cert-tag{background:#15803D;color:#fff;}
+  .cert-item.suspicious .cert-tag{background:var(--danger);color:#fff;}
+  .cert-item.unverified .cert-tag{background:var(--warn);color:#fff;}
+  .cert-reason{font-size:14px;color:var(--ink-soft);}
+  .muted-note{color:var(--ink-soft);font-size:14.5px;font-style:italic;}
+
+  /* Tags */
+  .tags{display:flex;flex-wrap:wrap;gap:10px;}
+  .tag{
+    background:var(--green-light);
+    color:var(--green-dark);
+    padding:8px 16px;
+    border-radius:30px;
+    font-size:13.5px;
+    font-weight:600;
+    border:1px solid #CBE6CE;
+  }
+
+  #review{font-size:16px;line-height:1.7;color:var(--ink);background:#FAFCF9;padding:18px;border-radius:12px;border-left:4px solid var(--green);}
+
+  /* Categories Rating GUI System */
+  .cat-row{margin-bottom:18px;}
+  .cat-top{display:flex;justify-content:space-between;font-size:14.5px;margin-bottom:6px;}
+  .cat-name{font-weight:700;color:var(--ink);}
+  .cat-score{color:var(--green);font-weight:800;font-family:'Plus Jakarta Sans',sans-serif;}
+  .cat-bar-track{height:9px;background:#EBF2EA;border-radius:8px;overflow:hidden;box-shadow:inset 0 1px 3px rgba(0,0,0,0.05);}
+  .cat-bar-fill{height:100%;background:linear-gradient(90deg, var(--green), var(--accent));border-radius:8px;transition:width 0.8s cubic-bezier(0.1, 1, 0.1, 1);}
+  .cat-reason{font-size:13px;color:var(--ink-soft);margin-top:6px;}
+  .rating-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:24px;padding-top:20px;border-top:1px solid var(--border);}
+  @media (max-width:650px){.rating-summary{grid-template-columns:1fr 1fr;}}
+  .rating-summary-item{background:#F8FBF7;border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center;}
+  .rating-summary-score{display:block;color:var(--green);font-family:'Plus Jakarta Sans',sans-serif;font-size:21px;font-weight:800;line-height:1.1;}
+  .rating-summary-name{display:block;color:var(--ink-soft);font-size:11.5px;font-weight:600;line-height:1.3;margin-top:6px;}
+  .source-badge{display:inline-flex;align-items:center;gap:7px;background:#E2F1E5;border:1px solid #B8D8B2;color:var(--green-dark);font-size:12px;font-weight:700;padding:5px 10px;border-radius:20px;margin-bottom:14px;}
+  .source-badge.fallback{background:#FEF3C7;border-color:#FDE68A;color:#92400E;}
+  .ai-issue{display:none;background:#FFF7ED;border:1px solid #FED7AA;border-left:4px solid #EA580C;color:#9A3412;border-radius:10px;padding:12px 14px;font-size:13.5px;line-height:1.5;margin:-4px 0 18px;}
+
+  /* Pros cons */
+  .pc-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;}
+  @media (max-width:650px){.pc-grid{grid-template-columns:1fr;}}
+  .pc-col-label{font-size:15px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px;}
+  .pc-col.pros .pc-col-label{color:#15803D;}
+  .pc-col.cons .pc-col-label{color:var(--danger);}
+  .pc-col ul{margin:0;padding-left:20px;font-size:15px;color:var(--ink-soft);}
+  .pc-col li{margin-bottom:8px;line-height:1.5;}
+
+  .alt-card{
+    background:linear-gradient(135deg, #F0FDF4 0%, #E2FEE8 100%);
+    border:1px solid #BBF7D0;
+    display:block;
+  }
+  .alt-card b{display:block;color:var(--green-dark);font-size:18px;margin-bottom:7px;}
+  .alt-lead{color:var(--ink-soft);font-size:13.5px;margin:0 0 16px;}
+  .alt-content{font-size:15px;color:var(--ink);line-height:1.7;background:rgba(255,255,255,0.62);border:1px solid #C7EACD;border-radius:10px;padding:16px;}
+  .review-heading{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;}
+
+  footer{
+    text-align:center;padding:40px 24px;color:var(--ink-soft);font-size:13.5px;font-weight:500;
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M12 2C12 2 5 6 5 12.5C5 17.19 8.13 21 12 21C15.87 21 19 17.19 19 12.5C19 6 12 2 12 2Z" stroke="#1B6B43" stroke-width="2"/><path d="M12 8V16M9 11L12 8L15 11" stroke="#1B6B43" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>SatyaHarit</span>
+    </div>
+    <div class="nav-links">
+      <a href="#howitworks">Certificates</a>
+      <a href="#result">Results</a>
+    </div>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="hero-inner">
+    <h1>Exposing greenwash with AI precision.</h1>
+    <p>Paste any product link. We extract true claims, audit real certifying body domains, and deliver an advanced trust rating system.</p>
+
+    <div class="search-card">
+      <input id="link" placeholder="Paste product link (e.g., Zouk, Amazon, brand site)…" autocomplete="off">
+      <button id="btn" onclick="analyze()">Check product</button>
+    </div>
+    <div id="errMsg">Please paste a valid product link first.</div>
+
+    <div id="scanPanel">
+      <div class="scan-track"></div>
+      <div id="scanStatus">Fetching product page…</div>
+    </div>
+  </div>
+</section>
+
+<main>
+  <div class="container" id="result">
+
+    <div class="card overview">
+      <div class="pimg-box"><img id="pImg" alt="Product Image"></div>
+      <div class="ov-meta">
+        <span class="badge" id="pType">Product</span>
+        <h2 id="pTitle"></h2>
+        <p id="pAbout"></p>
+        <div class="score-strip">
+          <div>
+            <div class="score-num" id="score">—</div>
+            <div class="score-label">Green-Trust Score</div>
+          </div>
+          <div class="score-verdict" id="verdict"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="howitworks">
+      <h2>Certificate verification <span class="sub">Cross-checking claims against official registries and governing domains.</span></h2>
+      <div class="cert-grid" id="certChecks"></div>
+      <div id="noCertNote" class="muted-note" style="display:none;">No specific certifying body referenced on this page.</div>
+    </div>
+
+    <div class="card">
+      <h2>Claims detected on page</h2>
+      <div class="tags" id="claimsList"></div>
+    </div>
+
+    <div class="card">
+      <div class="review-heading">
+        <h2>AI Sustainability Review</h2>
+        <span id="sourceBadge" class="source-badge">● Checking source</span>
+      </div>
+      <div id="aiIssue" class="ai-issue"></div>
+      <p id="review"></p>
+    </div>
+
+    <div class="card">
+      <h2>Advanced Category Breakdown <span class="sub">Dynamic rating system across key sustainability and quality vectors.</span></h2>
+      <div id="cats"></div>
+      <div id="ratingSummary" class="rating-summary"></div>
+    </div>
+
+    <div class="card">
+      <div class="pc-grid">
+        <div class="pc-col pros">
+          <div class="pc-col-label">✅ Key Pros</div>
+          <ul id="pros"></ul>
+        </div>
+        <div class="pc-col cons">
+          <div class="pc-col-label">⚠️ Potential Cons / Red Flags</div>
+          <ul id="cons"></ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="card alt-card">
+      <b>🌱 Verified Sustainable Alternative</b>
+      <p class="alt-lead">Evidence-based recommendation: verify these details before buying.</p>
+      <div class="alt-content" id="alt"></div>
+    </div>
+
+  </div>
+</main>
+
+<footer>SatyaHarit · Advanced Greenwash Guard & AI Auditor</footer>
+
+<script>
+const scanSteps = [
+  "Fetching product page & metadata…",
+  "Extracting ingredient & eco-claims…",
+  "Auditing certificate governing domains…",
+  "Running Gemini deep analysis…",
+  "Compiling gorgeous trust score…"
+];
+
+function scoreColor(score){
+  if(score < 40) return '#DC2626';
+  if(score < 70) return '#D97706';
+  return '#15803D';
+}
+
+async function analyze(){
+  const url = document.getElementById('link').value.trim();
+  const errEl = document.getElementById('errMsg');
+  if(!url){ errEl.style.display = 'block'; return; }
+  errEl.style.display = 'none';
+
+  const isLocalFrontend = window.location.protocol === 'file:' ||
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1';
+  const apiBaseUrl = window.SATYAHARIT_API_URL ||
+    (isLocalFrontend ? 'http://127.0.0.1:8000' : 'https://satyaharit-greenwash.onrender.com');
+
+  const btn = document.getElementById('btn');
+  btn.disabled = true;
+  btn.innerText = 'Analyzing...';
+  document.getElementById('result').classList.remove('active');
+  const scanPanel = document.getElementById('scanPanel');
+  scanPanel.classList.add('active');
+
+  let step = 0;
+  const statusEl = document.getElementById('scanStatus');
+  statusEl.innerText = scanSteps[0];
+  const stepTimer = setInterval(() => {
+    step = Math.min(step + 1, scanSteps.length - 1);
+    statusEl.innerText = scanSteps[step];
+  }, 1000);
+
+  try {
+    const res = await fetch(`${apiBaseUrl.replace(/\/+$/, '')}/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+    });
+    
+    const data = await res.json();
+    
+    clearInterval(stepTimer);
+    scanPanel.classList.remove('active');
+
+    if(!res.ok || data.error){
+      errEl.innerText = 'Backend error: ' + (data.error || `HTTP ${res.status}`);
+      errEl.style.display = 'block';
+      btn.disabled = false;
+      btn.innerText = 'Check product';
+      return;
+    }
+
+    document.getElementById('pImg').src = data.product_image || '';
+    document.getElementById('pTitle').innerText = data.product_title || 'Product Analysis';
+    document.getElementById('pType').innerText = data.product_type || 'Product';
+
+    const score = data.green_trust_score ?? 0;
+    const scoreEl = document.getElementById('score');
+    scoreEl.innerText = score;
+    scoreEl.style.color = scoreColor(score);
+    document.getElementById('verdict').innerText = data.verdict || '';
+
+    const claimCount = (data.claims_detected || []).length;
+    const verifiedCount = (data.cert_checks || []).filter(c => c.status === 'verified').length;
+    const isAiAnalysis = data.analysis_source === 'gemini';
+    const analysisSource = isAiAnalysis ? 'Gemini AI analysis' : 'Evidence-based fallback analysis';
+    const sourceBadge = document.getElementById('sourceBadge');
+    sourceBadge.innerText = isAiAnalysis
+      ? `● Gemini AI verified (${data.analysis_model || 'active model'})`
+      : '● AI unavailable - evidence fallback';
+    sourceBadge.classList.toggle('fallback', !isAiAnalysis);
+    const aiIssue = document.getElementById('aiIssue');
+    aiIssue.innerText = data.analysis_issue ? `AI issue: ${data.analysis_issue}` : '';
+    aiIssue.style.display = data.analysis_issue ? 'block' : 'none';
+    document.getElementById('pAbout').innerText =
+      `${data.product_type || 'Product'} audited successfully using ${analysisSource}. Found ${claimCount} eco-claim${claimCount === 1 ? '' : 's'} on page text, with ${verifiedCount} officially backed by verified bodies.`;
+
+    document.getElementById('review').innerText = data.review || '';
+    document.getElementById('alt').innerText = data.alternative_suggestion || 'Not available.';
+
+    const certBox = document.getElementById('certChecks');
+    const certChecks = data.cert_checks || [];
+    if(certChecks.length === 0){
+      document.getElementById('noCertNote').style.display = 'block';
+      certBox.innerHTML = '';
+    } else {
+      document.getElementById('noCertNote').style.display = 'none';
+      certBox.innerHTML = certChecks.map(c => `
+        <div class="cert-item ${c.status}">
+          <div class="cert-top">
+            <span class="cert-name">${c.cert}</span>
+            <span class="cert-tag">${c.status}</span>
+          </div>
+          <div class="cert-reason">${c.reason}</div>
+        </div>
+      `).join('');
+    }
+
+    const claims = data.claims_detected || [];
+    document.getElementById('claimsList').innerHTML = claims.length
+      ? claims.map(c => `<span class="tag">✨ ${c.phrase}</span>`).join('')
+      : '<span class="muted-note">No explicit eco-phrases detected in text.</span>';
+
+    const categories = data.categories || [];
+    document.getElementById('cats').innerHTML = categories.map(c => `
+      <div class="cat-row">
+        <div class="cat-top"><span class="cat-name">${c.name}</span><span class="cat-score">${c.score} / 10</span></div>
+        <div class="cat-bar-track"><div class="cat-bar-fill" style="width:${c.score * 10}%"></div></div>
+        <div class="cat-reason">${c.reason}</div>
+      </div>
+    `).join('');
+    document.getElementById('ratingSummary').innerHTML = categories.map(c => `
+      <div class="rating-summary-item">
+        <span class="rating-summary-score">${c.score}/10</span>
+        <span class="rating-summary-name">${c.name}</span>
+      </div>
+    `).join('');
+
+    document.getElementById('pros').innerHTML = (data.pros || []).map(p => `<li>${p}</li>`).join('');
+    document.getElementById('cons').innerHTML = (data.cons || []).map(c => `<li>${c}</li>`).join('');
+
+    document.getElementById('result').classList.add('active');
+    document.getElementById('result').scrollIntoView({behavior:'smooth', block:'start'});
+
+  }catch(e){
+    clearInterval(stepTimer);
+    scanPanel.classList.remove('active');
+    statusEl.innerText = '';
+    errEl.innerText = 'Backend not reachable — please check network or Render service status.';
+    errEl.style.display = 'block';
+  }
+
+  btn.disabled = false;
+  btn.innerText = 'Check product';
+}
+</script>
+</body>
+</html>
