@@ -27,7 +27,8 @@ app.add_middleware(
 )
 
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL_FALLBACKS = ["gemini-2.5-flash", "gemini-2.0-flash"]
 
 PRODUCT_KEYWORDS = {
     "bag": "Sustainable Accessory",
@@ -270,10 +271,7 @@ def _generate_fallback_report(product_type, title, text, url):
         cons.append("Brand ke eco-claims ki authenticity ko verify karne ke liye zyada evidence chahiye, aur website par proof missing hai.")
     cons.append("Packaging, sourcing, and lifecycle transparency detailed nahi mil rahi, isliye kisi bhi website se genuine proof verify karna mushkil hota hai.")
 
-    alternative = (
-        "Aisi product choose karein jisme material source, certifications, and lifecycle info clearly mention ho. "
-        "Certified recycled, fair-trade, or transparent supply-chain wale brands better option hain."
-    )
+    alternative = _build_alternative(product_type, title, evidence, score)
 
     return {
         "product_type": product_type,
@@ -290,6 +288,41 @@ def _generate_fallback_report(product_type, title, text, url):
         ],
         "cert_checks": [],
     }
+
+
+def _build_alternative(product_type, title, evidence, score):
+    alternatives = {
+        "Sustainable Accessory": (
+            "Backpack ya bag lete waqt recycled polyester/organic cotton ka exact percentage, lining aur hardware material check karein. "
+            "Better option wahi hoga jahan GRS, GOTS ya Fair Trade certification number verify ho, factory/supplier information public ho, "
+            "aur repair, spare parts ya take-back program diya ho. Sirf 'eco bag' ya 'vegan leather' likha hona enough proof nahi hai."
+        ),
+        "Reusable Drinkware": (
+            "Bottle ke liye food-grade stainless steel ya clearly specified recycled material choose karein. BPA-free claim ke saath food-contact safety, "
+            "recycled-content percentage, leakproof parts ka replacement, packaging material aur end-of-life/recycling instructions bhi hone chahiye. "
+            "Aisa seller better hai jo material grade, test report aur long-term repair/replacement support openly dikhata ho."
+        ),
+        "Eco Apparel": (
+            "Kapdon me organic cotton ke liye GOTS certificate number, recycled fibre ka percentage, dyeing process aur factory/labour information verify karein. "
+            "Best alternative woh hai jisme fabric composition 100% clear ho, low-impact dye ka proof ho, durable stitching ho, aur brand repair, resale ya take-back option deta ho."
+        ),
+        "Organic Skincare": (
+            "Skincare me ingredient list, ingredient origin, batch details, cruelty-free certification aur packaging recyclability compare karein. "
+            "'Natural' ya 'chemical-free' jaise vague words se zyada reliable product woh hai jisme full INCI list, responsible sourcing proof, dermatological testing aur refill/recyclable packaging clearly mentioned ho."
+        ),
+        "Sustainable Footwear": (
+            "Shoes ke liye recycled/plant-based material ka exact percentage, adhesive aur sole composition, factory standards aur durability evidence dekhein. "
+            "Preferred alternative woh hai jisme credible material certification, repairable construction, replaceable parts aur take-back/recycling program available ho."
+        ),
+    }
+    guidance = alternatives.get(
+        product_type,
+        "Aisa alternative choose karein jisme material source, exact recycled/organic percentage, third-party certification, factory details, packaging information aur end-of-life plan clearly available ho."
+    )
+    return (
+        f"{title} ke comparison me recommended direction: {guidance} "
+        f"Current evidence score {score}/100 hai, isliye purchase se pehle brand se certification link, material breakdown aur sourcing proof maangna zaroori hai."
+    )
 
 
 def _normalize_report_score(report):
@@ -313,13 +346,25 @@ def _normalize_report_score(report):
     return report
 
 
-def _call_gemini_report(product_type, title, url, content_text, image_url=""):
-    if genai is None or not GOOGLE_API_KEY:
-        return None
+def _is_complete_ai_report(report):
+    required_text = ["review", "verdict", "alternative_suggestion"]
+    if not isinstance(report, dict):
+        return False
+    if any(not isinstance(report.get(field), str) or not report[field].strip() for field in required_text):
+        return False
+    categories = report.get("categories")
+    return isinstance(categories, list) and len(categories) >= 4
 
+
+def _call_gemini_report(product_type, title, url, content_text, image_url=""):
+    if genai is None:
+        return None, "Gemini SDK load nahi hua. requirements.txt se google-generativeai install karein."
+    if not GOOGLE_API_KEY:
+        return None, "GOOGLE_API_KEY missing hai. backend/.env me valid Gemini API key add karein."
+
+    last_issue = "Gemini ne valid report return nahi ki."
     try:
         genai.configure(api_key=GOOGLE_API_KEY)
-        model = genai.GenerativeModel(GEMINI_MODEL)
         prompt = f"""
 You are an expert sustainability auditor. Analyze the actual product page content only.
 
@@ -346,7 +391,7 @@ Give a realistic greenwashing assessment in Hinglish and return ONLY valid JSON.
   ],
   "pros": ["...", "..."],
   "cons": ["...", "..."],
-  "alternative_suggestion": "..."
+    "alternative_suggestion": "Detailed category-specific alternative guidance with material, certification, sourcing, packaging, lifecycle and verification steps."
 }}
         """
         content_parts = [prompt]
@@ -364,14 +409,25 @@ Give a realistic greenwashing assessment in Hinglish and return ONLY valid JSON.
                     "data": image_response.content,
                 })
 
-        response = model.generate_content(content_parts)
-        raw_text = getattr(response, "text", "") or ""
-        parsed = _safe_json_loads(raw_text)
-        if parsed:
-            return _normalize_report_score(parsed)
+        model_names = [GEMINI_MODEL] + [name for name in GEMINI_MODEL_FALLBACKS if name != GEMINI_MODEL]
+        for model_name in model_names:
+            try:
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content(content_parts)
+                raw_text = getattr(response, "text", "") or ""
+                parsed = _safe_json_loads(raw_text)
+                if _is_complete_ai_report(parsed):
+                    parsed["analysis_model"] = model_name
+                    return _normalize_report_score(parsed), ""
+                last_issue = f"Gemini model {model_name} ne incomplete ya invalid JSON report return ki."
+                print(last_issue)
+            except Exception as model_error:
+                last_issue = f"Gemini model {model_name} error: {str(model_error)[:240]}"
+                print(last_issue)
     except Exception as e:
-        print(f"Gemini analysis failed: {e}")
-    return None
+        last_issue = f"Gemini setup/request error: {str(e)[:240]}"
+        print(last_issue)
+    return None, last_issue
 
 
 def fetch_product_page(url):
@@ -400,7 +456,7 @@ def _analyze(data: dict):
     product_type = _detect_product_type(url, f"{title} {signals['description']} {signals['text']}")
     product_image = signals["image"] or DEFAULT_IMAGES.get(product_type, DEFAULT_IMAGES["Eco Product"] if "Eco Product" in DEFAULT_IMAGES else "")
 
-    report = _call_gemini_report(
+    report, analysis_issue = _call_gemini_report(
         product_type,
         title,
         url,
@@ -443,6 +499,8 @@ def _analyze(data: dict):
         "cons": report.get("cons", []),
         "alternative_suggestion": report.get("alternative_suggestion", "Choose a more transparent option with clear certifications."),
         "analysis_source": analysis_source,
+        "analysis_model": report.get("analysis_model", "evidence-fallback"),
+        "analysis_issue": analysis_issue,
     }
 
 
